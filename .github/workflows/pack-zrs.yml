@@ -1,0 +1,68 @@
+name: Pack ZRS
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Zed version string (e.g. 1.20.2+stable.356.df181c6f...). Empty = latest stable."
+        required: false
+        default: ""
+      os:
+        description: "Target OS"
+        required: false
+        default: "linux"
+        type: choice
+        options:
+          - linux
+          - macos
+          - windows
+      arch:
+        description: "Target architecture"
+        required: false
+        default: "x86_64"
+        type: choice
+        options:
+          - x86_64
+          - aarch64
+
+jobs:
+  pack-zrs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "Using specified version: ${{ inputs.version }}"
+          else
+            # Fetch latest stable tag from GitHub API
+            TAG=$(curl -s https://api.github.com/repos/zed-industries/zed/releases \
+              | python3 -c "import sys,json; releases=json.load(sys.stdin); print(next(r['tag_name'] for r in releases if not r['prerelease'] and not r['draft']))")
+            VER=$(echo "$TAG" | sed 's/^v//')
+            echo "version=$VER" >> "$GITHUB_OUTPUT"
+            echo "Using latest stable version: $VER"
+          fi
+
+      - name: Pack ZRS
+        run: |
+          python3 pack-zrs.py \
+            --version "${{ steps.version.outputs.version }}" \
+            --os "${{ inputs.os }}" \
+            --arch "${{ inputs.arch }}" \
+            --output-dir artifacts
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zrs-${{ inputs.os }}-${{ inputs.arch }}-${{ steps.version.outputs.version }}
+          path: artifacts/*.tgz
+          retention-days: 30
